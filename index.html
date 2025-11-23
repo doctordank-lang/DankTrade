@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>StockStream Terminal v4.1 (Smart Connect)</title>
+    <title>StockStream Terminal v4.2 (Diagnostics)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
@@ -325,9 +325,10 @@
                 <div>
                     <label class="block text-xs font-bold text-emerald-500 uppercase mb-2">Financial Modeling Prep (FMP) Key</label>
                     <div class="flex gap-2">
-                         <input type="password" id="fmpKeyInput" class="w-full bg-[#0b0e11] border border-slate-700 rounded px-3 py-2 text-white text-xs font-mono focus:border-emerald-500 outline-none" placeholder="Leave empty for SIMULATION mode">
+                         <input type="password" id="fmpKeyInput" class="w-full bg-[#0b0e11] border border-slate-700 rounded px-3 py-2 text-white text-xs font-mono focus:border-emerald-500 outline-none" placeholder="Type 'demo' or paste key">
                          <button onclick="testFmpConnection()" class="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-white text-xs rounded border border-slate-700 whitespace-nowrap">Test Key</button>
                     </div>
+                    <div id="connectionDebugLog" class="hidden"></div>
                     <p class="text-[10px] text-slate-500 mt-1">Required for Real-Time Data & News.</p>
                 </div>
                 <div>
@@ -507,15 +508,46 @@
             const key = document.getElementById('fmpKeyInput').value.trim();
             if (!key) { showToast("Enter a key first", "error"); return; }
             
-            showToast("Testing connection...", "info");
+            const debugEl = document.getElementById('connectionDebugLog');
+            debugEl.classList.remove('hidden');
+            debugEl.innerText = "Pinging FMP API...";
+
             try {
-                const res = await fetch(`https://financialmodelingprep.com/api/v3/quote/AAPL?apikey=${key}`);
-                if (res.status === 200) showToast("Connection Successful!", "success");
-                else if (res.status === 401) showToast("Invalid API Key", "error");
-                else if (res.status === 429) showToast("Key Limit Reached", "error");
-                else showToast("Connection Failed", "error");
+                const testSymbol = key === 'demo' ? 'AAPL' : 'SPY'; 
+                const res = await fetch(`https://financialmodelingprep.com/api/v3/quote/${testSymbol}?apikey=${key}`);
+                
+                const status = res.status;
+                debugEl.innerText = `HTTP Status: ${status}`;
+
+                if (res.status === 200) {
+                    const data = await res.json();
+                    if(data && data.length > 0) {
+                        showToast("Success! Connected.", "success");
+                        debugEl.innerText += `\nData received for ${data[0].symbol}: $${data[0].price}`;
+                        debugEl.className = "text-[10px] font-mono text-emerald-400 mt-2 p-2 bg-emerald-500/10 rounded";
+                    } else {
+                        showToast("Connected but no data.", "warning");
+                        debugEl.innerText += "\nEmpty array received.";
+                    }
+                }
+                else if (res.status === 401) {
+                    showToast("Invalid API Key", "error");
+                    debugEl.innerText += "\nError: 401 Unauthorized. Check character accuracy.";
+                    debugEl.className = "text-[10px] font-mono text-rose-400 mt-2 p-2 bg-rose-500/10 rounded";
+                }
+                else if (res.status === 429) {
+                    showToast("Rate Limit Exceeded", "error");
+                    debugEl.innerText += "\nError: 429 Too Many Requests. Free tier limited.";
+                    debugEl.className = "text-[10px] font-mono text-amber-400 mt-2 p-2 bg-amber-500/10 rounded";
+                }
+                else {
+                    showToast(`Error: ${res.status}`, "error");
+                    debugEl.className = "text-[10px] font-mono text-rose-400 mt-2 p-2 bg-rose-500/10 rounded";
+                }
             } catch(e) {
-                showToast("Network Error", "error");
+                showToast("Network Error (CORS/Block)", "error");
+                debugEl.innerText = `Network Failure: ${e.message}\nPossible AdBlock or Firewall issue.`;
+                debugEl.className = "text-[10px] font-mono text-rose-400 mt-2 p-2 bg-rose-500/10 rounded";
             }
         }
 
