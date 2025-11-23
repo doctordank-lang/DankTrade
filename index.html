@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>StockStream Terminal v4.2 (Diagnostics)</title>
+    <title>StockStream Terminal v4.3 (Advanced Diagnostics)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
@@ -466,6 +466,7 @@
                 const res = await fetch(`https://financialmodelingprep.com/api/v3/quote/${symbols}?apikey=${fmpApiKey}`);
                 
                 if (res.status === 401) throw new Error('Invalid Key');
+                if (res.status === 403) throw new Error('Forbidden Access');
                 if (res.status === 429) throw new Error('Rate Limit');
                 if (!res.ok) throw new Error('API Error');
                 
@@ -496,6 +497,7 @@
                 let msg = "Connection Lost. Reverting to SIM.";
                 if (e.message === "Invalid Key") msg = "Invalid API Key. Switched to Sim.";
                 else if (e.message === "Rate Limit") msg = "Rate Limit Hit. Switched to Sim.";
+                else if (e.message === "Forbidden Access") msg = "403 Forbidden. Check CORS/Plan.";
                 
                 showToast(msg, "error");
                 fmpApiKey = ""; 
@@ -510,44 +512,53 @@
             
             const debugEl = document.getElementById('connectionDebugLog');
             debugEl.classList.remove('hidden');
-            debugEl.innerText = "Pinging FMP API...";
+            
+            const testSymbol = key === 'demo' ? 'AAPL' : 'SPY'; 
+            const url = `https://financialmodelingprep.com/api/v3/quote/${testSymbol}?apikey=${key}`;
+            
+            debugEl.innerText = `Pinging FMP API...\nTarget URL: ${url}`;
+            debugEl.className = "text-[10px] font-mono text-slate-400 mt-2 p-2 bg-slate-800 rounded whitespace-pre-wrap";
 
             try {
-                const testSymbol = key === 'demo' ? 'AAPL' : 'SPY'; 
-                const res = await fetch(`https://financialmodelingprep.com/api/v3/quote/${testSymbol}?apikey=${key}`);
+                const res = await fetch(url);
                 
                 const status = res.status;
-                debugEl.innerText = `HTTP Status: ${status}`;
-
-                if (res.status === 200) {
+                
+                if (status === 200) {
                     const data = await res.json();
                     if(data && data.length > 0) {
                         showToast("Success! Connected.", "success");
-                        debugEl.innerText += `\nData received for ${data[0].symbol}: $${data[0].price}`;
-                        debugEl.className = "text-[10px] font-mono text-emerald-400 mt-2 p-2 bg-emerald-500/10 rounded";
+                        debugEl.innerText += `\nHTTP Status: 200 OK\nData received for ${data[0].symbol}: $${data[0].price.toFixed(2)}`;
+                        debugEl.className = "text-[10px] font-mono text-emerald-400 mt-2 p-2 bg-emerald-500/10 rounded whitespace-pre-wrap";
                     } else {
                         showToast("Connected but no data.", "warning");
-                        debugEl.innerText += "\nEmpty array received.";
+                        debugEl.innerText += "\nHTTP Status: 200 OK\nWarning: Empty data array received.";
                     }
                 }
-                else if (res.status === 401) {
-                    showToast("Invalid API Key", "error");
-                    debugEl.innerText += "\nError: 401 Unauthorized. Check character accuracy.";
-                    debugEl.className = "text-[10px] font-mono text-rose-400 mt-2 p-2 bg-rose-500/10 rounded";
+                else if (status === 401) {
+                    showToast("Invalid API Key (401)", "error");
+                    debugEl.innerText += "\nHTTP Status: 401 Unauthorized\nError: Key is incorrect or not yet fully provisioned.";
+                    debugEl.className = "text-[10px] font-mono text-rose-400 mt-2 p-2 bg-rose-500/10 rounded whitespace-pre-wrap";
                 }
-                else if (res.status === 429) {
-                    showToast("Rate Limit Exceeded", "error");
-                    debugEl.innerText += "\nError: 429 Too Many Requests. Free tier limited.";
-                    debugEl.className = "text-[10px] font-mono text-amber-400 mt-2 p-2 bg-amber-500/10 rounded";
+                else if (status === 403) {
+                    showToast("Forbidden Access (403)", "error");
+                    debugEl.innerText += "\nHTTP Status: 403 Forbidden\n\nTROUBLESHOOTING:\n1. Check FMP account for Domain/CORS restrictions (especially since this app is embedded in an iframe).\n2. Verify the key's subscription tier allows access to the 'quote' endpoint.";
+                    debugEl.className = "text-[10px] font-mono text-rose-400 mt-2 p-2 bg-rose-500/10 rounded whitespace-pre-wrap";
+                }
+                else if (status === 429) {
+                    showToast("Rate Limit Exceeded (429)", "error");
+                    debugEl.innerText += "\nHTTP Status: 429 Too Many Requests\nError: Daily or hourly request limit has been reached.";
+                    debugEl.className = "text-[10px] font-mono text-amber-400 mt-2 p-2 bg-amber-500/10 rounded whitespace-pre-wrap";
                 }
                 else {
-                    showToast(`Error: ${res.status}`, "error");
-                    debugEl.className = "text-[10px] font-mono text-rose-400 mt-2 p-2 bg-rose-500/10 rounded";
+                    showToast(`Error: HTTP ${status}`, "error");
+                    debugEl.innerText += `\nHTTP Status: ${status} Unknown Error`;
+                    debugEl.className = "text-[10px] font-mono text-rose-400 mt-2 p-2 bg-rose-500/10 rounded whitespace-pre-wrap";
                 }
             } catch(e) {
                 showToast("Network Error (CORS/Block)", "error");
-                debugEl.innerText = `Network Failure: ${e.message}\nPossible AdBlock or Firewall issue.`;
-                debugEl.className = "text-[10px] font-mono text-rose-400 mt-2 p-2 bg-rose-500/10 rounded";
+                debugEl.innerText += `\nNetwork Failure: ${e.message}\nThis often means the browser's security policy (CORS) or an AdBlocker is preventing the request.`;
+                debugEl.className = "text-[10px] font-mono text-rose-400 mt-2 p-2 bg-rose-500/10 rounded whitespace-pre-wrap";
             }
         }
 
