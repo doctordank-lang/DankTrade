@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>StockStream Terminal v4.0 (Monte Carlo)</title>
+    <title>StockStream Terminal v4.1 (Smart Connect)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
@@ -324,7 +324,10 @@
             <div class="space-y-5">
                 <div>
                     <label class="block text-xs font-bold text-emerald-500 uppercase mb-2">Financial Modeling Prep (FMP) Key</label>
-                    <input type="password" id="fmpKeyInput" class="w-full bg-[#0b0e11] border border-slate-700 rounded px-3 py-2 text-white text-xs font-mono focus:border-emerald-500 outline-none" placeholder="Leave empty for SIMULATION mode">
+                    <div class="flex gap-2">
+                         <input type="password" id="fmpKeyInput" class="w-full bg-[#0b0e11] border border-slate-700 rounded px-3 py-2 text-white text-xs font-mono focus:border-emerald-500 outline-none" placeholder="Leave empty for SIMULATION mode">
+                         <button onclick="testFmpConnection()" class="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-white text-xs rounded border border-slate-700 whitespace-nowrap">Test Key</button>
+                    </div>
                     <p class="text-[10px] text-slate-500 mt-1">Required for Real-Time Data & News.</p>
                 </div>
                 <div>
@@ -460,10 +463,13 @@
             
             try {
                 const res = await fetch(`https://financialmodelingprep.com/api/v3/quote/${symbols}?apikey=${fmpApiKey}`);
-                if(!res.ok) throw new Error('API Error');
-                const data = await res.json();
                 
-                if(data.length === 0) throw new Error('Invalid Key or Limit');
+                if (res.status === 401) throw new Error('Invalid Key');
+                if (res.status === 429) throw new Error('Rate Limit');
+                if (!res.ok) throw new Error('API Error');
+                
+                const data = await res.json();
+                if(data.length === 0) throw new Error('No Data');
 
                 data.forEach(real => {
                     const local = stocks.find(s => s.symbol === real.symbol);
@@ -486,10 +492,30 @@
                 fetchRealNews(); 
                 
             } catch(e) {
-                showToast("Connection Lost. Reverting to SIM.", "error");
+                let msg = "Connection Lost. Reverting to SIM.";
+                if (e.message === "Invalid Key") msg = "Invalid API Key. Switched to Sim.";
+                else if (e.message === "Rate Limit") msg = "Rate Limit Hit. Switched to Sim.";
+                
+                showToast(msg, "error");
                 fmpApiKey = ""; 
                 updateModeUI();
                 startEngine(); 
+            }
+        }
+
+        async function testFmpConnection() {
+            const key = document.getElementById('fmpKeyInput').value.trim();
+            if (!key) { showToast("Enter a key first", "error"); return; }
+            
+            showToast("Testing connection...", "info");
+            try {
+                const res = await fetch(`https://financialmodelingprep.com/api/v3/quote/AAPL?apikey=${key}`);
+                if (res.status === 200) showToast("Connection Successful!", "success");
+                else if (res.status === 401) showToast("Invalid API Key", "error");
+                else if (res.status === 429) showToast("Key Limit Reached", "error");
+                else showToast("Connection Failed", "error");
+            } catch(e) {
+                showToast("Network Error", "error");
             }
         }
 
@@ -882,8 +908,8 @@
         }
 
         function saveSettings() {
-            fmpApiKey = document.getElementById('fmpKeyInput').value;
-            userGeminiKey = document.getElementById('geminiKeyInput').value;
+            fmpApiKey = document.getElementById('fmpKeyInput').value.trim();
+            userGeminiKey = document.getElementById('geminiKeyInput').value.trim();
             
             localStorage.setItem('fmp_api_key', fmpApiKey);
             localStorage.setItem('gemini_api_key', userGeminiKey);
