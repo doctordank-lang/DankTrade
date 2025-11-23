@@ -1,0 +1,934 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>StockStream Terminal</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@300;400;500;600;700&display=swap');
+
+        :root {
+            --bg-dark: #0b0e11;
+            --panel-dark: #151a21;
+            --border-color: #2d3748;
+            --accent-color: #10b981;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-dark);
+            color: #e2e8f0;
+        }
+
+        .font-mono {
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        /* Table Styles */
+        .terminal-table th {
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 0.7rem;
+            letter-spacing: 0.05em;
+            color: #94a3b8;
+            padding: 12px 16px;
+            text-align: right;
+            border-bottom: 1px solid var(--border-color);
+            white-space: nowrap;
+        }
+        .terminal-table th:first-child { text-align: left; }
+        
+        .terminal-table td {
+            padding: 12px 16px;
+            text-align: right;
+            border-bottom: 1px solid #1e293b;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.9rem;
+            transition: background-color 0.3s;
+            white-space: nowrap;
+        }
+        .terminal-table td:first-child { text-align: left; }
+        
+        .terminal-row:hover {
+            background-color: #1e293b;
+        }
+
+        /* Flash Animations */
+        @keyframes flash-green-bg { 0% { background-color: rgba(16, 185, 129, 0.15); } 100% { background-color: transparent; } }
+        @keyframes flash-red-bg { 0% { background-color: rgba(239, 68, 68, 0.15); } 100% { background-color: transparent; } }
+        @keyframes flash-text-green { 0% { color: #34d399; text-shadow: 0 0 5px rgba(52, 211, 153, 0.5); } 100% { color: inherit; } }
+        @keyframes flash-text-red { 0% { color: #f87171; text-shadow: 0 0 5px rgba(248, 113, 113, 0.5); } 100% { color: inherit; } }
+
+        .flash-row-up { animation: flash-green-bg 0.8s ease-out; }
+        .flash-row-down { animation: flash-red-bg 0.8s ease-out; }
+        .text-flash-up { animation: flash-text-green 0.8s ease-out; }
+        .text-flash-down { animation: flash-text-red 0.8s ease-out; }
+
+        /* Ticker Tape */
+        .ticker-wrap {
+            width: 100%;
+            overflow: hidden;
+            background-color: #0f172a;
+            border-bottom: 1px solid #1e293b;
+            height: 32px;
+            display: flex;
+            align-items: center;
+        }
+        .ticker {
+            display: flex;
+            animation: ticker 40s linear infinite;
+            white-space: nowrap;
+        }
+        .ticker-item {
+            padding: 0 2rem;
+            font-size: 0.75rem;
+            font-family: 'JetBrains Mono', monospace;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        @keyframes ticker { 0% { transform: translateX(0); } 100% { transform: translateX(-100%); } }
+        
+        /* Sliders */
+        input[type=range] {
+            -webkit-appearance: none; 
+            background: transparent; 
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 16px;
+            width: 16px;
+            border-radius: 50%;
+            background: #10b981;
+            cursor: pointer;
+            margin-top: -6px; 
+            box-shadow: 0 0 10px rgba(16, 185, 129, 0.3);
+        }
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 4px;
+            cursor: pointer;
+            background: #334155;
+            border-radius: 2px;
+        }
+        
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #0b0e11; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #475569; }
+
+        .prose strong { color: #e2e8f0; }
+        .prose ul { list-style-type: disc; padding-left: 1rem; }
+        .prose p { margin-bottom: 0.5rem; }
+        
+        /* Chat Message Bubbles */
+        .chat-msg-user { background-color: #1e293b; color: #fff; border-radius: 12px 12px 0 12px; padding: 10px 14px; margin-left: auto; max-width: 85%; font-size: 0.85rem; }
+        .chat-msg-ai { background-color: rgba(16, 185, 129, 0.1); color: #e2e8f0; border: 1px solid rgba(16, 185, 129, 0.2); border-radius: 12px 12px 12px 0; padding: 10px 14px; margin-right: auto; max-width: 90%; font-size: 0.85rem; }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col overflow-hidden text-slate-300 relative">
+
+    <!-- Top Ticker -->
+    <div class="ticker-wrap">
+        <div class="ticker" id="tickerTape">
+            <!-- Ticker items injected via JS -->
+        </div>
+    </div>
+
+    <!-- Navbar -->
+    <nav class="border-b border-slate-800 bg-[#0f172a] z-40 h-14 flex-shrink-0">
+        <div class="max-w-full mx-auto px-4 sm:px-6 lg:px-8 h-full">
+            <div class="flex justify-between items-center h-full">
+                <div class="flex items-center gap-3">
+                    <div class="bg-emerald-500/10 p-1.5 rounded-md border border-emerald-500/20">
+                        <i data-lucide="activity" class="text-emerald-500 h-5 w-5"></i>
+                    </div>
+                    <span class="text-lg font-bold text-slate-100 tracking-tight font-mono">TERMINAL<span class="text-emerald-500">.PRO</span></span>
+                </div>
+                
+                <div class="flex items-center gap-4">
+                    <!-- Mode Display -->
+                    <div id="modeIndicator" class="hidden md:flex text-[10px] font-bold tracking-wider text-slate-500 bg-slate-800/50 px-3 py-1.5 rounded border border-slate-700 items-center gap-2 uppercase">
+                        <div class="w-1.5 h-1.5 rounded-full bg-amber-500"></div>
+                        Simulation Mode
+                    </div>
+
+                    <div class="h-6 w-px bg-slate-800 mx-2"></div>
+
+                    <!-- Controls -->
+                    <button onclick="toggleChat()" class="group flex items-center gap-2 text-xs font-medium text-slate-400 hover:text-white transition-colors bg-slate-800/50 hover:bg-slate-700 px-3 py-1.5 rounded border border-slate-700">
+                        <i data-lucide="message-square" class="w-4 h-4 text-emerald-500"></i>
+                        <span class="hidden sm:inline">Ask Analyst</span>
+                    </button>
+
+                    <button onclick="togglePanel('technicalsPanel')" class="group flex items-center gap-2 text-xs font-medium text-slate-400 hover:text-white transition-colors">
+                        <i data-lucide="sliders" class="w-4 h-4 group-hover:text-emerald-400"></i>
+                        <span class="hidden sm:inline">Market Mechanics</span>
+                    </button>
+                    
+                    <button onclick="togglePanel('settingsModal')" class="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors" title="API Settings">
+                        <i data-lucide="database" class="w-4 h-4"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <div class="flex flex-grow overflow-hidden relative">
+        
+        <!-- Sidebar (Watchlist/Menu) - Hidden on mobile for space -->
+        <aside class="w-64 border-r border-slate-800 bg-[#11161d] hidden lg:flex flex-col">
+            <div class="p-4 border-b border-slate-800">
+                <h2 class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4">Quick Watch</h2>
+                <form id="addStockFormSidebar" class="flex gap-2 mb-2">
+                    <input type="text" id="sidebarSymbolInput" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-1.5 text-xs text-white focus:border-emerald-500 outline-none font-mono uppercase" placeholder="ADD SYMBOL" maxlength="5">
+                    <button type="submit" class="bg-slate-800 hover:bg-slate-700 text-emerald-500 border border-slate-700 rounded px-2 flex items-center justify-center">
+                        <i data-lucide="plus" class="w-3 h-3"></i>
+                    </button>
+                </form>
+            </div>
+            <div class="flex-grow overflow-y-auto p-2 space-y-1" id="miniWatchlist">
+                <!-- Mini items injected here -->
+            </div>
+            <div class="p-4 border-t border-slate-800 text-[10px] text-slate-600 text-center font-mono">
+                INSTITUTIONAL GRADE • v2.6.0
+            </div>
+        </aside>
+
+        <!-- Main Terminal View -->
+        <main class="flex-grow flex flex-col bg-[#0b0e11] overflow-hidden relative">
+            
+            <!-- Market Mechanics Control Panel (Technicals) -->
+            <div id="technicalsPanel" class="absolute top-0 left-0 right-0 bg-[#1a202c] border-b border-slate-700 shadow-2xl transform -translate-y-full transition-transform duration-300 z-30">
+                <div class="max-w-7xl mx-auto px-6 py-6">
+                    <div class="flex justify-between items-center mb-6">
+                        <h3 class="text-sm font-bold text-emerald-400 uppercase tracking-widest flex items-center gap-2">
+                            <i data-lucide="cpu" class="w-4 h-4"></i> Simulation Engine Parameters
+                        </h3>
+                        <button onclick="togglePanel('technicalsPanel')" class="text-slate-500 hover:text-white"><i data-lucide="x" class="w-4 h-4"></i></button>
+                    </div>
+                    
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+                        <!-- Volatility Slider -->
+                        <div class="space-y-3">
+                            <div class="flex justify-between text-xs font-mono text-slate-400">
+                                <span>MARKET VOLATILITY (VIX)</span>
+                                <span id="volValue" class="text-emerald-400">Low</span>
+                            </div>
+                            <input type="range" id="volSlider" min="1" max="10" value="2" class="w-full" oninput="updateSimParams()">
+                            <div class="flex justify-between text-[10px] text-slate-600 font-mono">
+                                <span>STABLE</span>
+                                <span>CHAOTIC</span>
+                            </div>
+                        </div>
+
+                        <!-- Trend Bias Slider -->
+                        <div class="space-y-3">
+                            <div class="flex justify-between text-xs font-mono text-slate-400">
+                                <span>GLOBAL TREND BIAS</span>
+                                <span id="trendValue" class="text-white">Neutral</span>
+                            </div>
+                            <input type="range" id="trendSlider" min="-5" max="5" value="0" step="0.5" class="w-full" oninput="updateSimParams()">
+                            <div class="flex justify-between text-[10px] text-slate-600 font-mono">
+                                <span>BEARISH</span>
+                                <span>BULLISH</span>
+                            </div>
+                        </div>
+
+                        <!-- Speed Slider -->
+                        <div class="space-y-3">
+                            <div class="flex justify-between text-xs font-mono text-slate-400">
+                                <span>TICK REFRESH RATE</span>
+                                <span id="speedValue" class="text-emerald-400">2000ms</span>
+                            </div>
+                            <input type="range" id="speedSlider" min="100" max="5000" value="2000" step="100" class="w-full" oninput="updateSpeed()">
+                            <div class="flex justify-between text-[10px] text-slate-600 font-mono">
+                                <span>HFT (FAST)</span>
+                                <span>SLOW</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mt-6 pt-4 border-t border-slate-700/50 text-[10px] text-slate-500 font-mono">
+                        * PARAMETERS ONLY AFFECT SIMULATION MODE. REAL API DATA IS UNMODIFIED.
+                    </div>
+                </div>
+            </div>
+
+            <!-- Dashboard Toolbar -->
+            <div class="px-6 py-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-800/50">
+                <div>
+                    <h1 class="text-xl font-bold text-white tracking-tight">Portfolio Overview</h1>
+                    <div class="flex gap-4 mt-1 text-xs text-slate-400 font-mono">
+                        <span>Total Assets: <span class="text-white" id="assetCount">0</span></span>
+                        <span class="text-slate-600">|</span>
+                        <span>Simulated Time: <span id="clock" class="text-emerald-500">--:--:--</span></span>
+                    </div>
+                </div>
+                
+                <div class="flex gap-2">
+                    <button onclick="analyzePortfolio()" class="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold uppercase tracking-wide rounded transition-colors shadow-lg shadow-emerald-900/20">
+                        <i data-lucide="sparkles" class="w-3 h-3"></i> Risk Report
+                    </button>
+                </div>
+            </div>
+
+            <!-- Data Grid -->
+            <div class="flex-grow overflow-x-auto overflow-y-auto">
+                <table class="w-full terminal-table border-collapse">
+                    <thead class="bg-[#11161d] sticky top-0 z-10 shadow-md">
+                        <tr>
+                            <th>Symbol</th>
+                            <th>Last Price</th>
+                            <th>Change</th>
+                            <th>% Chg</th>
+                            <th>Day Range</th>
+                            <th>Volume</th>
+                            <th>Mkt Cap</th>
+                            <th>Signal</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="stockTableBody" class="bg-[#0b0e11]">
+                        <!-- Rows injected via JS -->
+                    </tbody>
+                </table>
+            </div>
+            
+            <!-- Empty State -->
+            <div id="emptyState" class="hidden flex flex-col items-center justify-center h-64 text-center">
+                <i data-lucide="bar-chart-2" class="h-12 w-12 text-slate-700 mb-4"></i>
+                <p class="text-slate-500 font-mono text-sm">NO DATA AVAILABLE</p>
+                <p class="text-slate-600 text-xs mt-2">Use sidebar to add tickers.</p>
+            </div>
+
+        </main>
+
+        <!-- AI Analyst Chat Panel -->
+        <div id="chatPanel" class="absolute inset-y-0 right-0 w-full sm:w-96 bg-[#151a21] border-l border-slate-700 shadow-2xl transform translate-x-full transition-transform duration-300 z-50 flex flex-col">
+            <div class="px-4 py-4 border-b border-slate-700 flex justify-between items-center bg-[#1a202c]">
+                <div class="flex items-center gap-2 text-emerald-400">
+                    <i data-lucide="bot" class="h-5 w-5"></i>
+                    <h3 class="font-bold text-white tracking-wider font-mono uppercase">AI Analyst</h3>
+                </div>
+                <button onclick="toggleChat()" class="text-slate-400 hover:text-white"><i data-lucide="x" class="h-5 w-5"></i></button>
+            </div>
+            
+            <!-- Chat History -->
+            <div id="chatHistory" class="flex-grow overflow-y-auto p-4 space-y-4 custom-scrollbar">
+                <div class="flex flex-col space-y-2">
+                    <div class="chat-msg-ai">
+                        Hello. I am your AI Market Analyst. I have access to the live data on your terminal. Ask me anything about your stocks, risks, or market trends.
+                    </div>
+                </div>
+            </div>
+
+            <!-- Chat Input -->
+            <div class="p-4 border-t border-slate-700 bg-[#1a202c]">
+                <form id="chatForm" class="relative">
+                    <input type="text" id="chatInput" class="w-full bg-[#0b0e11] border border-slate-700 rounded-lg pl-4 pr-12 py-3 text-sm text-white focus:border-emerald-500 outline-none font-mono" placeholder="Ask about your portfolio..." autocomplete="off">
+                    <button type="submit" class="absolute right-2 top-2 p-1 text-emerald-500 hover:text-white rounded transition-colors">
+                        <i data-lucide="send" class="w-5 h-5"></i>
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modals (AI & Settings) -->
+    <!-- AI Modal -->
+    <div id="aiModal" class="fixed inset-0 z-[100] hidden bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 opacity-0 transition-opacity duration-300">
+        <div class="bg-[#151a21] border border-slate-700 rounded shadow-2xl max-w-2xl w-full transform scale-95 transition-transform duration-300 flex flex-col max-h-[80vh]" id="aiModalContent">
+            <div class="px-6 py-4 border-b border-slate-700 flex justify-between items-center bg-[#1a202c]">
+                <div class="flex items-center gap-2 text-emerald-400">
+                    <i data-lucide="file-text" class="h-5 w-5"></i>
+                    <h3 id="aiModalTitle" class="font-bold text-white tracking-wider font-mono uppercase">Gemini Report</h3>
+                </div>
+                <button onclick="closeModal('aiModal')" class="text-slate-400 hover:text-white"><i data-lucide="x" class="h-5 w-5"></i></button>
+            </div>
+            <div class="p-6 overflow-y-auto custom-scrollbar">
+                <div id="aiLoading" class="hidden space-y-4">
+                    <div class="flex items-center gap-3 text-emerald-500 font-mono text-sm animate-pulse">
+                        <i data-lucide="loader-2" class="animate-spin h-4 w-4"></i>
+                        PROCESSING DATA...
+                    </div>
+                    <div class="h-2 bg-slate-800 rounded animate-shimmer w-full"></div>
+                    <div class="h-2 bg-slate-800 rounded animate-shimmer w-2/3"></div>
+                </div>
+                <div id="aiResponse" class="text-slate-300 text-sm leading-relaxed prose prose-invert max-w-none hidden font-mono"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settingsModal" class="fixed inset-0 z-[100] hidden bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-[#151a21] border border-slate-700 rounded shadow-2xl max-w-md w-full">
+            <div class="px-6 py-4 border-b border-slate-700 flex justify-between items-center bg-[#1a202c]">
+                <h3 class="font-bold text-white font-mono uppercase">Data Source</h3>
+                <button onclick="togglePanel('settingsModal')" class="text-slate-400 hover:text-white"><i data-lucide="x" class="w-4 h-4"></i></button>
+            </div>
+            <div class="p-6 space-y-4">
+                <div>
+                    <label class="block text-xs font-bold text-slate-500 uppercase mb-2">Financial Modeling Prep (FMP) API Key</label>
+                    <input type="password" id="fmpKeyInput" class="w-full bg-[#0b0e11] border border-slate-700 rounded px-3 py-2 text-white focus:border-emerald-500 outline-none font-mono text-sm" placeholder="e.g. abc123xyz...">
+                    <p class="text-[10px] text-slate-500 mt-2 font-mono">ENTER KEY FOR LIVE DATA. LEAVE EMPTY FOR SIMULATION.</p>
+                </div>
+                <button onclick="saveSettings()" class="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold uppercase tracking-wider rounded">Save Configuration</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- Global Config ---
+        const apiKey = ""; // System provides this
+        let fmpApiKey = localStorage.getItem('fmp_api_key') || '';
+        
+        // --- Simulation Parameters ---
+        let simVolatility = 0.002; // Default volatility
+        let simTrend = 0; // Neutral trend
+        let tickSpeed = 2000; // 2s
+        let updateInterval;
+
+        // --- Data Model ---
+        let stocks = [
+            { symbol: 'AAPL', name: 'Apple Inc.', price: 175.43, change: 1.25, changePercent: 0.72, volume: 54230000, dayHigh: 176.10, dayLow: 174.80, marketCap: 2750000000000 },
+            { symbol: 'MSFT', name: 'Microsoft', price: 334.12, change: -2.10, changePercent: -0.62, volume: 22100000, dayHigh: 336.50, dayLow: 332.90, marketCap: 2500000000000 },
+            { symbol: 'NVDA', name: 'NVIDIA', price: 460.18, change: 8.45, changePercent: 1.87, volume: 45600000, dayHigh: 462.30, dayLow: 455.10, marketCap: 1100000000000 },
+            { symbol: 'TSLA', name: 'Tesla Inc.', price: 245.67, change: 5.32, changePercent: 2.21, volume: 105000000, dayHigh: 248.00, dayLow: 241.50, marketCap: 780000000000 },
+            { symbol: 'AMD', name: 'Adv Micro Dev', price: 102.45, change: -1.15, changePercent: -1.11, volume: 65000000, dayHigh: 104.20, dayLow: 101.90, marketCap: 165000000000 }
+        ];
+
+        // --- DOM Elements ---
+        const tableBody = document.getElementById('stockTableBody');
+        const tickerTape = document.getElementById('tickerTape');
+        const miniWatchlist = document.getElementById('miniWatchlist');
+        const clockEl = document.getElementById('clock');
+        const assetCountEl = document.getElementById('assetCount');
+        const chatPanel = document.getElementById('chatPanel');
+        const chatHistory = document.getElementById('chatHistory');
+        const chatForm = document.getElementById('chatForm');
+        const chatInput = document.getElementById('chatInput');
+        
+        // --- Inputs ---
+        const volSlider = document.getElementById('volSlider');
+        const trendSlider = document.getElementById('trendSlider');
+        const speedSlider = document.getElementById('speedSlider');
+        const volValue = document.getElementById('volValue');
+        const trendValue = document.getElementById('trendValue');
+        const speedValue = document.getElementById('speedValue');
+
+        // --- Initialization ---
+        function init() {
+            lucide.createIcons();
+            updateClock();
+            setInterval(updateClock, 1000);
+            
+            // Set initial UI input values based on defaults
+            document.getElementById('fmpKeyInput').value = fmpApiKey;
+            updateModeUI();
+            
+            // Render initial
+            renderTable();
+            renderSidebar();
+            updateTickerTape();
+
+            // Start Engine
+            startEngine();
+            
+            // Listeners
+            document.getElementById('addStockFormSidebar').addEventListener('submit', (e) => {
+                e.preventDefault();
+                const input = document.getElementById('sidebarSymbolInput');
+                addStock(input.value);
+                input.value = '';
+            });
+
+            // Chat Listener
+            chatForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                handleChatSubmit();
+            });
+        }
+
+        function startEngine() {
+            if (updateInterval) clearInterval(updateInterval);
+            if (fmpApiKey) {
+                updateInterval = setInterval(updatePrices, 10000); // Real API limit friendly
+            } else {
+                updateInterval = setInterval(updatePrices, tickSpeed);
+            }
+        }
+
+        // --- Rendering ---
+        
+        function formatCurrency(num) {
+            return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(num);
+        }
+        
+        function formatCompact(num) {
+            return new Intl.NumberFormat('en-US', { notation: "compact", maximumFractionDigits: 1 }).format(num);
+        }
+
+        function renderTable() {
+            tableBody.innerHTML = '';
+            assetCountEl.innerText = stocks.length;
+
+            if (stocks.length === 0) {
+                document.getElementById('emptyState').classList.remove('hidden');
+                return;
+            } else {
+                document.getElementById('emptyState').classList.add('hidden');
+            }
+
+            stocks.forEach(stock => {
+                const tr = document.createElement('tr');
+                tr.className = 'terminal-row group border-b border-slate-800/50 hover:bg-[#151a21] transition-colors';
+                tr.id = `row-${stock.symbol}`;
+                
+                const isPos = stock.change >= 0;
+                const colorClass = isPos ? 'text-emerald-400' : 'text-rose-400';
+                const sign = isPos ? '+' : '';
+                
+                // Signal Logic
+                let signal = "NEUTRAL";
+                let signalColor = "text-slate-500";
+                if(stock.changePercent > 1.5) { signal = "STRONG BUY"; signalColor = "text-emerald-400"; }
+                else if(stock.changePercent > 0.5) { signal = "BUY"; signalColor = "text-emerald-500/80"; }
+                else if(stock.changePercent < -1.5) { signal = "STRONG SELL"; signalColor = "text-rose-400"; }
+                else if(stock.changePercent < -0.5) { signal = "SELL"; signalColor = "text-rose-500/80"; }
+
+                tr.innerHTML = `
+                    <td class="font-bold text-white">
+                        <div class="flex items-center gap-2">
+                            <span class="w-1 h-4 ${isPos ? 'bg-emerald-500' : 'bg-rose-500'} rounded-sm" id="indicator-${stock.symbol}"></span>
+                            <div>
+                                <div>${stock.symbol}</div>
+                                <div class="text-[10px] text-slate-500 font-normal truncate max-w-[100px]">${stock.name}</div>
+                            </div>
+                        </div>
+                    </td>
+                    <td class="text-white font-bold text-base" id="price-${stock.symbol}">${formatCurrency(stock.price)}</td>
+                    <td class="${colorClass}" id="change-${stock.symbol}">${sign}${stock.change.toFixed(2)}</td>
+                    <td class="${colorClass}" id="pct-${stock.symbol}">${sign}${stock.changePercent.toFixed(2)}%</td>
+                    <td class="text-slate-400 text-xs">
+                        <span class="text-rose-400/70" id="low-${stock.symbol}">${stock.dayLow.toFixed(2)}</span> - <span class="text-emerald-400/70" id="high-${stock.symbol}">${stock.dayHigh.toFixed(2)}</span>
+                    </td>
+                    <td class="text-slate-300" id="vol-${stock.symbol}">${formatCompact(stock.volume)}</td>
+                    <td class="text-slate-400">${formatCompact(stock.marketCap)}</td>
+                    <td class="text-[10px] font-bold ${signalColor}" id="signal-${stock.symbol}">${signal}</td>
+                    <td>
+                        <div class="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button onclick="getAiInsight('${stock.symbol}')" class="p-1.5 bg-slate-800 text-emerald-400 hover:bg-slate-700 rounded border border-slate-700" title="AI Insight">
+                                <i data-lucide="bot" class="w-3 h-3"></i>
+                            </button>
+                            <button onclick="generateEarningsReport('${stock.symbol}')" class="p-1.5 bg-slate-800 text-amber-400 hover:bg-slate-700 rounded border border-slate-700" title="Simulate Earnings Call">
+                                <i data-lucide="file-text" class="w-3 h-3"></i>
+                            </button>
+                            <button onclick="removeStock('${stock.symbol}')" class="p-1.5 bg-slate-800 text-rose-400 hover:bg-slate-700 rounded border border-slate-700" title="Remove">
+                                <i data-lucide="trash-2" class="w-3 h-3"></i>
+                            </button>
+                        </div>
+                    </td>
+                `;
+                tableBody.appendChild(tr);
+            });
+            lucide.createIcons();
+        }
+
+        function renderSidebar() {
+            miniWatchlist.innerHTML = '';
+            stocks.forEach(stock => {
+                const div = document.createElement('div');
+                const isPos = stock.change >= 0;
+                div.className = 'flex justify-between items-center p-2 rounded hover:bg-slate-800 cursor-pointer group text-xs font-mono';
+                div.innerHTML = `
+                    <span class="text-slate-300 font-bold group-hover:text-white">${stock.symbol}</span>
+                    <span class="${isPos ? 'text-emerald-400' : 'text-rose-400'}">${stock.changePercent.toFixed(2)}%</span>
+                `;
+                miniWatchlist.appendChild(div);
+            });
+        }
+
+        function updateTickerTape() {
+            // Duplicate list to ensure seamless infinite scroll
+            const tapeContent = [...stocks, ...stocks].map(s => {
+                const isPos = s.change >= 0;
+                const color = isPos ? 'text-emerald-500' : 'text-rose-500';
+                const icon = isPos ? '▲' : '▼';
+                return `<div class="ticker-item">
+                    <span class="font-bold text-slate-300">${s.symbol}</span>
+                    <span class="${color}">${icon} ${s.price.toFixed(2)}</span>
+                    <span class="${color} text-[10px]">(${s.changePercent.toFixed(1)}%)</span>
+                </div>`;
+            }).join('');
+            tickerTape.innerHTML = tapeContent;
+        }
+
+        // --- Simulation Engine ---
+        async function updatePrices() {
+            if (fmpApiKey) {
+                // REAL MODE
+                await fetchRealPrices();
+            } else {
+                // SIM MODE
+                stocks.forEach(stock => {
+                    // Apply Volatility Slider
+                    const randomMove = (Math.random() - 0.5) * simVolatility * stock.price;
+                    const trendMove = (simTrend / 1000) * stock.price; 
+                    
+                    const move = randomMove + trendMove;
+                    const oldPrice = stock.price;
+                    
+                    stock.price += move;
+                    stock.change += move;
+                    stock.changePercent = (stock.change / (stock.price - stock.change)) * 100;
+                    
+                    // Update High/Low
+                    if(stock.price > stock.dayHigh) stock.dayHigh = stock.price;
+                    if(stock.price < stock.dayLow) stock.dayLow = stock.price;
+                    
+                    // Simulate Volume
+                    stock.volume += Math.floor(Math.random() * 10000 * (simVolatility * 1000));
+
+                    updateRowUI(stock, oldPrice);
+                });
+            }
+            renderSidebar(); // Keep sidebar roughly in sync
+        }
+
+        function updateRowUI(stock, oldPrice) {
+            const row = document.getElementById(`row-${stock.symbol}`);
+            const priceEl = document.getElementById(`price-${stock.symbol}`);
+            const changeEl = document.getElementById(`change-${stock.symbol}`);
+            const pctEl = document.getElementById(`pct-${stock.symbol}`);
+            const indicatorEl = document.getElementById(`indicator-${stock.symbol}`);
+            const volEl = document.getElementById(`vol-${stock.symbol}`);
+            const signalEl = document.getElementById(`signal-${stock.symbol}`);
+            
+            if(!row) return;
+
+            priceEl.innerText = formatCurrency(stock.price);
+            const sign = stock.change >= 0 ? '+' : '';
+            changeEl.innerText = `${sign}${stock.change.toFixed(2)}`;
+            pctEl.innerText = `${sign}${stock.changePercent.toFixed(2)}%`;
+            volEl.innerText = formatCompact(stock.volume);
+            
+            // Update High/Low Text
+            const lowEl = document.getElementById(`low-${stock.symbol}`);
+            const highEl = document.getElementById(`high-${stock.symbol}`);
+            if (lowEl) lowEl.innerText = stock.dayLow.toFixed(2);
+            if (highEl) highEl.innerText = stock.dayHigh.toFixed(2);
+
+            const isPos = stock.change >= 0;
+            changeEl.className = isPos ? 'text-emerald-400' : 'text-rose-400';
+            pctEl.className = isPos ? 'text-emerald-400' : 'text-rose-400';
+            
+            if(indicatorEl) {
+                indicatorEl.className = `w-1 h-4 ${isPos ? 'bg-emerald-500' : 'bg-rose-500'} rounded-sm`;
+            }
+
+            // Signal logic update
+            let signal = "NEUTRAL";
+            let signalColor = "text-slate-500";
+            if(stock.changePercent > 1.5) { signal = "STRONG BUY"; signalColor = "text-emerald-400"; }
+            else if(stock.changePercent > 0.5) { signal = "BUY"; signalColor = "text-emerald-500/80"; }
+            else if(stock.changePercent < -1.5) { signal = "STRONG SELL"; signalColor = "text-rose-400"; }
+            else if(stock.changePercent < -0.5) { signal = "SELL"; signalColor = "text-rose-500/80"; }
+            if (signalEl) {
+                signalEl.innerText = signal;
+                signalEl.className = `text-[10px] font-bold ${signalColor}`;
+            }
+
+            // Flash Row Animation
+            row.classList.remove('flash-row-up', 'flash-row-down');
+            priceEl.classList.remove('text-flash-up', 'text-flash-down');
+            void row.offsetWidth; // reflow
+
+            if(stock.price > oldPrice) {
+                row.classList.add('flash-row-up');
+                priceEl.classList.add('text-flash-up');
+            } else {
+                row.classList.add('flash-row-down');
+                priceEl.classList.add('text-flash-down');
+            }
+        }
+
+        // --- Real Data Fetching ---
+        async function fetchRealPrices() {
+            const symbols = stocks.map(s => s.symbol).join(',');
+            if(!symbols) return;
+            try {
+                const res = await fetch(`https://financialmodelingprep.com/api/v3/quote/${symbols}?apikey=${fmpApiKey}`);
+                if(!res.ok) throw new Error();
+                const data = await res.json();
+                
+                data.forEach(real => {
+                    const local = stocks.find(s => s.symbol === real.symbol);
+                    if(local) {
+                        const old = local.price;
+                        local.price = real.price;
+                        local.change = real.change;
+                        local.changePercent = real.changesPercentage;
+                        local.dayHigh = real.dayHigh;
+                        local.dayLow = real.dayLow;
+                        local.volume = real.volume;
+                        local.marketCap = real.marketCap;
+                        updateRowUI(local, old);
+                    }
+                });
+            } catch(e) { console.error("API Error - Likely Invalid Key or Limit Reached"); }
+        }
+
+        // --- UI Controls Logic ---
+        function updateSimParams() {
+            // Map slider 1-10 to volatility 0.001 - 0.03
+            const volInput = parseInt(volSlider.value);
+            simVolatility = 0.001 + (volInput * 0.003);
+            
+            // Map trend -5 to 5 to bias
+            simTrend = parseFloat(trendSlider.value);
+            
+            // Update Labels
+            volValue.innerText = volInput < 3 ? "STABLE" : volInput < 7 ? "ACTIVE" : "VOLATILE";
+            volValue.className = volInput < 3 ? "text-emerald-400" : volInput < 7 ? "text-amber-400" : "text-rose-400";
+            
+            trendValue.innerText = simTrend === 0 ? "NEUTRAL" : simTrend > 0 ? `BULLISH (+${simTrend})` : `BEARISH (${simTrend})`;
+            trendValue.className = simTrend === 0 ? "text-slate-300" : simTrend > 0 ? "text-emerald-400" : "text-rose-400";
+        }
+
+        function updateSpeed() {
+            tickSpeed = parseInt(speedSlider.value);
+            speedValue.innerText = `${tickSpeed}ms`;
+            startEngine(); // Restart interval
+        }
+
+        function togglePanel(id) {
+            const el = document.getElementById(id);
+            if (id === 'technicalsPanel') {
+                if (el.classList.contains('-translate-y-full')) {
+                    el.classList.remove('-translate-y-full');
+                } else {
+                    el.classList.add('-translate-y-full');
+                }
+            } else {
+                if (el.classList.contains('hidden')) {
+                    el.classList.remove('hidden');
+                } else {
+                    el.classList.add('hidden');
+                }
+            }
+        }
+
+        function toggleChat() {
+            if (chatPanel.classList.contains('translate-x-full')) {
+                chatPanel.classList.remove('translate-x-full');
+            } else {
+                chatPanel.classList.add('translate-x-full');
+            }
+        }
+        
+        function closeModal(id) {
+            document.getElementById(id).classList.add('hidden');
+        }
+
+        function saveSettings() {
+            fmpApiKey = document.getElementById('fmpKeyInput').value;
+            localStorage.setItem('fmp_api_key', fmpApiKey);
+            updateModeUI();
+            closeModal('settingsModal');
+            startEngine();
+        }
+
+        function updateModeUI() {
+            const ind = document.getElementById('modeIndicator');
+            if (fmpApiKey) {
+                ind.innerHTML = `<div class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></div> LIVE FEED`;
+                ind.className = "hidden md:flex text-[10px] font-bold tracking-wider text-emerald-400 bg-emerald-500/10 px-3 py-1.5 rounded border border-emerald-500/30 items-center gap-2 uppercase";
+            } else {
+                ind.innerHTML = `<div class="w-1.5 h-1.5 rounded-full bg-amber-500"></div> SIMULATION`;
+                ind.className = "hidden md:flex text-[10px] font-bold tracking-wider text-slate-500 bg-slate-800/50 px-3 py-1.5 rounded border border-slate-700 items-center gap-2 uppercase";
+            }
+        }
+
+        function updateClock() {
+            const now = new Date();
+            clockEl.innerText = now.toLocaleTimeString('en-US', { hour12: false });
+        }
+
+        // --- Actions (Add/Remove/AI) ---
+        function addStock(symbol) {
+            symbol = symbol.toUpperCase().trim();
+            if(!symbol || stocks.find(s=>s.symbol===symbol)) return;
+            
+            const base = Math.random() * 200 + 50;
+            stocks.push({
+                symbol, 
+                name: 'Loading...', 
+                price: base, 
+                change: 0, 
+                changePercent: 0, 
+                volume: 1000000, 
+                dayHigh: base, 
+                dayLow: base, 
+                marketCap: 1000000000 
+            });
+            renderTable();
+            renderSidebar();
+            updateTickerTape();
+        }
+
+        window.removeStock = function(s) {
+            stocks = stocks.filter(stock => stock.symbol !== s);
+            renderTable();
+            renderSidebar();
+            updateTickerTape();
+        }
+
+        // --- Gemini AI Integration ---
+        async function callGemini(prompt) {
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+                });
+                
+                if(!response.ok) throw new Error("API Error");
+
+                const data = await response.json();
+                return data.candidates[0].content.parts[0].text;
+            } catch (error) { 
+                console.error(error);
+                return "AI Connection Failed. Please try again later."; 
+            }
+        }
+
+        // FEATURE 1: AI Analyst Chat
+        async function handleChatSubmit() {
+            const userMsg = chatInput.value.trim();
+            if(!userMsg) return;
+
+            // Add User Msg to History
+            const userDiv = document.createElement('div');
+            userDiv.className = "chat-msg-user";
+            userDiv.innerText = userMsg;
+            chatHistory.appendChild(userDiv);
+            chatHistory.scrollTop = chatHistory.scrollHeight;
+            
+            chatInput.value = '';
+
+            // Add Loading Msg
+            const loadDiv = document.createElement('div');
+            loadDiv.className = "chat-msg-ai animate-pulse";
+            loadDiv.innerText = "Analyzing...";
+            chatHistory.appendChild(loadDiv);
+
+            // Prepare Context
+            const stockContext = stocks.map(s => `${s.symbol}: $${s.price.toFixed(2)} (${s.changePercent.toFixed(2)}%)`).join(', ');
+            const prompt = `
+            You are an advanced financial terminal AI. 
+            Current Live Data on User's Board: ${stockContext}.
+            
+            User Question: "${userMsg}"
+            
+            Answer efficiently in a professional trader tone. Keep it short (max 3 sentences).
+            If the user asks about a stock not in the list, use your general knowledge but mention it's not tracked on board.
+            `;
+
+            const response = await callGemini(prompt);
+
+            // Update UI
+            chatHistory.removeChild(loadDiv);
+            const aiDiv = document.createElement('div');
+            aiDiv.className = "chat-msg-ai";
+            aiDiv.innerHTML = marked.parse(response);
+            chatHistory.appendChild(aiDiv);
+            chatHistory.scrollTop = chatHistory.scrollHeight;
+        }
+
+        // FEATURE 2: Simulated Earnings Call
+        window.generateEarningsReport = async function(symbol) {
+            const stock = stocks.find(s => s.symbol === symbol);
+            if(!stock) return;
+            
+            document.getElementById('aiModal').classList.remove('hidden');
+            document.getElementById('aiLoading').classList.remove('hidden');
+            document.getElementById('aiResponse').classList.add('hidden');
+            document.getElementById('aiModalTitle').innerText = `${symbol} EARNINGS CALL (SIM)`;
+            
+            const sentiment = stock.changePercent >= 0 ? "positive" : "challenging";
+            const prompt = `
+            Generate a *fictional* but realistic opening statement for a Quarterly Earnings Call for ${symbol}.
+            The stock is currently trading at $${stock.price.toFixed(2)} and is ${stock.changePercent >= 0 ? 'UP' : 'DOWN'} ${stock.changePercent.toFixed(2)}% today.
+            
+            The tone should match this ${sentiment} performance.
+            Include:
+            1. CEO opening remarks (1 paragraph).
+            2. Key Financial Highlights (Simulated revenue/EPS).
+            3. Future Guidance.
+            
+            Disclaimer: State clearly at the start that this is an AI-generated simulation.
+            `;
+            
+            const res = await callGemini(prompt);
+            document.getElementById('aiLoading').classList.add('hidden');
+            document.getElementById('aiResponse').classList.remove('hidden');
+            document.getElementById('aiResponse').innerHTML = marked.parse(res);
+        }
+
+        // Existing Insight Feature
+        window.getAiInsight = async function(symbol) {
+            const stock = stocks.find(s => s.symbol === symbol);
+            if(!stock) return;
+            
+            document.getElementById('aiModal').classList.remove('hidden');
+            document.getElementById('aiLoading').classList.remove('hidden');
+            document.getElementById('aiResponse').classList.add('hidden');
+            document.getElementById('aiModalTitle').innerText = "GEMINI INSIGHT";
+            
+            const prompt = `You are a high-frequency trading algorithm reporter. 
+            Analyze this simulated/real stock data:
+            Symbol: ${symbol}
+            Price: $${stock.price.toFixed(2)}
+            Change: ${stock.changePercent.toFixed(2)}%
+            Volume: ${formatCompact(stock.volume)}
+            
+            Output a short, professional "Terminal Insight" explaining the movement. Use 3-4 bullet points. Use markdown.`;
+            
+            const res = await callGemini(prompt);
+            document.getElementById('aiLoading').classList.add('hidden');
+            document.getElementById('aiResponse').classList.remove('hidden');
+            document.getElementById('aiResponse').innerHTML = marked.parse(res);
+        }
+
+        window.analyzePortfolio = async function() {
+             if (stocks.length === 0) return;
+
+             document.getElementById('aiModal').classList.remove('hidden');
+             document.getElementById('aiLoading').classList.remove('hidden');
+             document.getElementById('aiResponse').classList.add('hidden');
+             document.getElementById('aiModalTitle').innerText = "RISK REPORT";
+             
+             const list = stocks.map(s => `${s.symbol} (${s.changePercent.toFixed(2)}%)`).join(', ');
+             const prompt = `You are a portfolio risk manager. Analyze this portfolio performance today: ${list}. 
+             1. Identify the dominant sentiment.
+             2. Provide a "Risk Exposure" rating (Low/Med/High).
+             3. Recommend a hedging strategy (1 sentence).
+             Format in Markdown.`;
+             
+             const res = await callGemini(prompt);
+             document.getElementById('aiLoading').classList.add('hidden');
+             document.getElementById('aiResponse').classList.remove('hidden');
+             document.getElementById('aiResponse').innerHTML = marked.parse(res);
+        }
+
+        // Init
+        init();
+
+    </script>
+</body>
+</html>
