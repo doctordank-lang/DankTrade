@@ -104,7 +104,7 @@
         input[type=range]::-webkit-slider-runnable-track { width: 100%; height: 4px; cursor: pointer; background: #334155; border-radius: 2px; }
     </style>
 </head>
-<body class="min-h-screen flex flex-col overflow-hidden text-slate-300 relative">
+<body class="min-h-screen flex flex-col overflow-hidden relative text-slate-300">
 
     <!-- Toasts -->
     <div id="toastContainer"></div>
@@ -329,7 +329,7 @@
                          <button onclick="testFmpConnection()" class="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-white text-xs rounded border border-slate-700 whitespace-nowrap">Test Key</button>
                     </div>
                     <div id="connectionDebugLog" class="hidden"></div>
-                    <p class="text-[10px] text-slate-500 mt-1">Required for Real-Time Data & News.</p>
+                    <p class="text-[10px] text-slate-500 mt-1">Required for Real-Time Data & News. Current pull interval: <span class="font-bold text-emerald-400">60 seconds (1 minute)</span>.</p>
                 </div>
                 <div>
                     <label class="block text-xs font-bold text-blue-500 uppercase mb-2">Gemini API Key (Optional)</label>
@@ -351,6 +351,7 @@
         let simVolatility = 0.002;
         let simTrend = 0;
         let tickSpeed = 2000;
+        const realTimeInterval = 60000; // UPDATED to 60 seconds (1 minute)
         let updateInterval;
         let chartInstance = null;
         let mcChartInstance = null;
@@ -419,7 +420,7 @@
         function startEngine() {
             if (updateInterval) clearInterval(updateInterval);
             const isRealMode = !!fmpApiKey;
-            const interval = isRealMode ? 15000 : tickSpeed; 
+            const interval = isRealMode ? realTimeInterval : tickSpeed; 
             
             updatePrices(); 
             updateInterval = setInterval(updatePrices, interval);
@@ -542,7 +543,7 @@
                 }
                 else if (status === 403) {
                     showToast("Forbidden Access (403)", "error");
-                    debugEl.innerText += "\nHTTP Status: 403 Forbidden\n\nTROUBLESHOOTING:\n1. Check FMP account for Domain/CORS restrictions (especially since this app is embedded in an iframe).\n2. Verify the key's subscription tier allows access to the 'quote' endpoint.";
+                    debugEl.innerText += "\nHTTP Status: 403 Forbidden\n\nTROUBLESHOOTING (Canvas Environment):\n1. The most common cause is FMP's strict CORS/Domain filtering, as this app runs inside a secure iframe.\n2. Try temporarily setting your FMP key to allow requests from ALL domains (*) if possible in your account settings.\n3. Verify the key's subscription tier allows access to the 'quote' endpoint.";
                     debugEl.className = "text-[10px] font-mono text-rose-400 mt-2 p-2 bg-rose-500/10 rounded whitespace-pre-wrap";
                 }
                 else if (status === 429) {
